@@ -12,6 +12,8 @@
 #define RST_PIN         6 //9
 #define SS_PIN          7 //10
 
+#define MIN_TIMEOUT_MS   2000
+
 
 #include <SPI.h>
 #include <MFRC522.h>
@@ -24,7 +26,9 @@ const long freq = 868E6;
 const int led = 6;
 LoRaModem modem;
 
-void setupRFID(){
+unsigned long enableRFIDAfter = 0;
+
+void initRFID(){
   Serial.begin(115200);   // Initialize serial communications with the PC
   while (!Serial);    // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
   SPI.begin();      // Init SPI bus
@@ -33,7 +37,7 @@ void setupRFID(){
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
 }
 
-void setupLoRa(){
+void launchLoRa(){
   Serial.begin(9600);
   while (!Serial);  // On attend que le port série (série sur USBnatif) soit dispo
 
@@ -60,37 +64,60 @@ void setupLoRa(){
   Serial.println(freq);
 }
 
-void setup() {
-  setupRFID(); 
-  setupLoRa();
+boolean checkAuth(String uid){
+  if (uid == "f5 15 7 85")
+  {
+    Serial.println(" Access denied");
+    return false;
+  }
+  return true;
 }
+
+/*
+  SETUP
+*/
+
+void setup() {
+  initRFID(); 
+  launchLoRa();
+}
+
+/*
+  Main Loop
+*/
 
 void loop() {
   // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
   if ( ! mfrc522.PICC_IsNewCardPresent()) {
     return;
   }
-
+  
+  unsigned long currentTime = millis();
+  
+  if (currentTime < enableRFIDAfter)
+    return;
+  
   // Select one of the cards
   if ( ! mfrc522.PICC_ReadCardSerial()) {
     return;
   }
   
+  currentTime = millis();
+  enableRFIDAfter = currentTime + MIN_TIMEOUT_MS;
   
-    unsigned int readingCard = 0;
-    String content= "";
-    //Print card UID
-    Serial.println("New card presented.");
-    byte letter;
-    for (byte i = 0; i < mfrc522.uid.size; i++) 
-    {
-       content.concat(String(mfrc522.uid.uidByte[i], HEX));
-       if(i != mfrc522.uid.size -1 ) content.concat(" ");
-    }
-    Serial.print(" UFID : ");
-    currentId = content;
-    Serial.println(content);
-    
+  String content= "";
+  //Print card UID
+  Serial.println("New card presented.");
+  byte letter;
+  for (byte i = 0; i < mfrc522.uid.size; i++) 
+  {
+     content.concat(String(mfrc522.uid.uidByte[i], HEX));
+     if(i != mfrc522.uid.size -1 ) content.concat(" ");
+  }
+  Serial.print(" UFID : ");
+  Serial.println(content);
+  
+  if(checkAuth(content)){
     digitalWrite(led, HIGH);
     Serial.print("Sending packet <card number> to server: ");
   
@@ -105,6 +132,7 @@ void loop() {
     
     LoRa.endPacket();
     delay(40);
-    digitalWrite(led, LOW);
+    digitalWrite(led, LOW); 
+  }
 
 }
