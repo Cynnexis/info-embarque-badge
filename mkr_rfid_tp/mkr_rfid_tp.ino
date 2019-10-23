@@ -13,7 +13,7 @@
 #define SS_PIN          7 //10
 
 #define MIN_TIMEOUT_MS   3000
-#define MAX_NB_BLACKLISTED_IDS  10
+#define MAX_NB_WHITELISTED_IDS  10
 #define BYTE_ID_SIZE 4
 
 #include <SPI.h>
@@ -31,8 +31,8 @@ LoRaModem modem;
 
 unsigned long enableRFIDAfter = 0;
 
-// Array containing all the blacklisted ids
-byte blacklist[MAX_NB_BLACKLISTED_IDS][BYTE_ID_SIZE] = {
+// Array containing all the whitelisted ids
+byte whitelist[MAX_NB_WHITELISTED_IDS][BYTE_ID_SIZE] = {
   {34, 214, 186, 30}
 };
 
@@ -110,15 +110,15 @@ int byteArrayCmp(byte* b1, byte* b2, int size) {
 }
 
 /**
- * Check if the given ID is valid (a.k.a. not in the blacklist)
+ * Check if the given ID is valid (a.k.a. in the whitelist)
  * Note that the given ID will be converted into a lowercase char array.
  */
 bool isValidID(byte* id) {
-  for (int i = 0; i < MAX_NB_BLACKLISTED_IDS; i++)
-    if (byteArrayCmp(id, blacklist[i], BYTE_ID_SIZE) == 0)
-      return false;
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++)
+    if (byteArrayCmp(id, whitelist[i], BYTE_ID_SIZE) == 0)
+      return true;
   
-  return true;
+  return false;
 }
 
 /*
@@ -156,7 +156,7 @@ void loop() {
   //Print card UID
   printHexUID(mfrc522.uid.uidByte);
   
-  // Check if ID is not in the blacklist
+  // Check if ID is in the whitelist
   if (!isValidID(mfrc522.uid.uidByte)) {
     Serial.println("Blacklisted ID!\nUnauthorized access!\nCalling security...");
     return;
