@@ -74,13 +74,11 @@ void launchLoRa(){
 void checkResultCode(byte byteErr){
   switch (byteErr)
   {
+     case 0:
+     Serial.println("Couldn't save uid in database.");
+     break;
      case 1:
      Serial.println("Succesfully saved uid in database");
-     /* TODO si pas dans whitelist add dans whitelist */
-     break;
-     case 2:
-     Serial.println("Couldn't save uid in database.");
-     /* TODO si dans whitelist remove dans whitelist */
      break;
      default:
      Serial.println("Error: Unrecognized code encountered.");
