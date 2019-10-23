@@ -159,36 +159,4 @@ void loop() {
   delay(40);
   digitalWrite(led, LOW); 
 
-  currentTime = millis();
-  enableRFIDAfter = currentTime + MIN_TIMEOUT_MS;
-
-  unsigned int readingCard = 0;
-  String content = "";
-  //Print card UID
-  Serial.println("New card presented.");
-  byte letter;
-  for (byte i = 0; i < mfrc522.uid.size; i++)
-  {
-    content.concat(String(mfrc522.uid.uidByte[i], HEX));
-    if (i != mfrc522.uid.size - 1 ) content.concat(" ");
-  }
-  Serial.print(" UFID : ");
-  Serial.println(content);
-
-  digitalWrite(led, HIGH);
-  Serial.print("Sending packet <card number> to server: ");
-
-  //LoRa.send packet
-  LoRa.beginPacket();
-
-  LoRa.println("src : 01");
-  LoRa.println("dest : 43");
-  LoRa.println("obj : UID");
-  LoRa.print("msg : ");
-  LoRa.println(content);
-
-  LoRa.endPacket();
-  delay(40);
-  digitalWrite(led, LOW);
-
 }
