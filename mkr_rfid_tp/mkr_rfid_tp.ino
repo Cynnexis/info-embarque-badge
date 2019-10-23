@@ -13,8 +13,8 @@
 #define SS_PIN          7 //10
 
 #define MIN_TIMEOUT_MS   3000
-#define MAX_NB_BLACKLISTED_IDS  10
-#define MAX_NB_CHARS_ID 12
+#define MAX_NB_WHITELISTED_IDS  10
+#define BYTE_ID_SIZE 4
 
 #include <SPI.h>
 #include <MFRC522.h>
@@ -31,9 +31,9 @@ LoRaModem modem;
 
 unsigned long enableRFIDAfter = 0;
 
-// Array containing all the blacklisted ids
-char blacklist[MAX_NB_BLACKLISTED_IDS][MAX_NB_CHARS_ID] = {
-  "22 d6 ba 1e"
+// Array containing all the whitelisted ids
+byte whitelist[MAX_NB_WHITELISTED_IDS][BYTE_ID_SIZE] = {
+  {34, 214, 186, 30}
 };
 
 void initRFID() {
@@ -72,7 +72,7 @@ void launchLoRa() {
   Serial.println(freq);
 }
 
-String printHexUID(byte* uid){
+void printHexUID(byte* uid){
   String content= "";
   for (byte i = 0; i < 4; i++) 
   {
@@ -84,27 +84,41 @@ String printHexUID(byte* uid){
   Serial.println(content);
 }
 
-/**
- * Change the given string into a lower case string
- */
-void toLowerCase(char* str, int size) {
-  for (int i = 0; i < size; i++) {
-    str[i] = tolower(str[i]);
+void printUID(byte* uid){
+  String content= "[";
+  for (byte i = 0; i < BYTE_ID_SIZE; i++) {
+    content.concat(String(uid[i]));
+    if (i != (BYTE_ID_SIZE-1))
+      content.concat(String(", "));
   }
+  
+  content.concat(String("]"));
+  
+  Serial.println("New card presented.");
+  Serial.print(" UFID (byte) : ");
+  Serial.print(content);
 }
 
 /**
- * Check if the given ID is valid (a.k.a. not in the blacklist)
+ * Change the given string into a lower case string
+ */
+int byteArrayCmp(byte* b1, byte* b2, int size) {
+  int hash = 0;
+  for (int i = 0; i < size; i++)
+    hash += b1[i] - b2[i];
+  return hash;
+}
+
+/**
+ * Check if the given ID is valid (a.k.a. in the whitelist)
  * Note that the given ID will be converted into a lowercase char array.
  */
-bool isValidID(char* id) {
-  for (int i = 0; i < MAX_NB_BLACKLISTED_IDS; i++) {
-    toLowerCase(id, MAX_NB_CHARS_ID);
-    if (strcmp(id, blacklist[i]) == 0)
-      return false;
-  }
+bool isValidID(byte* id) {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++)
+    if (byteArrayCmp(id, whitelist[i], BYTE_ID_SIZE) == 0)
+      return true;
   
-  return true;
+  return false;
 }
 
 /*
@@ -141,6 +155,12 @@ void loop() {
   
   //Print card UID
   printHexUID(mfrc522.uid.uidByte);
+  
+  // Check if ID is in the whitelist
+  if (!isValidID(mfrc522.uid.uidByte)) {
+    Serial.println("Blacklisted ID!\nUnauthorized access!\nCalling security...");
+    return;
+  }
   
   digitalWrite(led, HIGH);
   Serial.println("Sending packet <card number> to server.");
