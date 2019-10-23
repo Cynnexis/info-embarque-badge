@@ -13,14 +13,15 @@
 #define SS_PIN          7 //10
 
 #define MIN_TIMEOUT_MS   2000
-#define MAX_NB_BLACKLISTED_IDS  2048
+#define MAX_NB_BLACKLISTED_IDS  10
 #define MAX_NB_CHARS_ID 12
-
 
 #include <SPI.h>
 #include <MFRC522.h>
 #include <LoRa.h>
 #include <MKRWAN.h>
+#include <ctype.h>
+#include <string.h>
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
@@ -69,6 +70,29 @@ void launchLoRa() {
   }
   Serial.print("LoRa Started, F = ");
   Serial.println(freq);
+}
+
+/**
+ * Change the given string into a lower case string
+ */
+void toLowerCase(char* str, int size) {
+  for (int i = 0; i < size; i++) {
+    str[i] = tolower(str[i]);
+  }
+}
+
+/**
+ * Check if the given ID is valid (a.k.a. not in the blacklist)
+ * Note that the given ID will be converted into a lowercase char array.
+ */
+bool isValidID(char* id) {
+  for (int i = 0; i < MAX_NB_BLACKLISTED_IDS; i++) {
+    toLowerCase(id, MAX_NB_CHARS_ID);
+    if (strcmp(id, blacklist[i]) == 0)
+      return false;
+  }
+  
+  return true;
 }
 
 /*
