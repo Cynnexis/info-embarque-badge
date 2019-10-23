@@ -12,7 +12,7 @@
 #define RST_PIN         6 //9
 #define SS_PIN          7 //10
 
-#define MIN_TIMEOUT_MS   2000
+#define MIN_TIMEOUT_MS   3000
 
 
 #include <SPI.h>
@@ -64,13 +64,16 @@ void launchLoRa(){
   Serial.println(freq);
 }
 
-boolean checkAuth(String uid){
-  if (uid == "f5 15 7 85")
+String printHexUID(byte* uid){
+  String content= "";
+  for (byte i = 0; i < 4; i++) 
   {
-    Serial.println(" Access denied");
-    return false;
+    content.concat(String(uid[i], HEX));
+    if(i != 3 ) content.concat(" ");
   }
-  return true;
+  Serial.println("New card presented.");
+  Serial.print(" UFID : ");
+  Serial.println(content);
 }
 
 /*
@@ -105,34 +108,24 @@ void loop() {
   currentTime = millis();
   enableRFIDAfter = currentTime + MIN_TIMEOUT_MS;
   
-  String content= "";
   //Print card UID
-  Serial.println("New card presented.");
-  byte letter;
-  for (byte i = 0; i < mfrc522.uid.size; i++) 
-  {
-     content.concat(String(mfrc522.uid.uidByte[i], HEX));
-     if(i != mfrc522.uid.size -1 ) content.concat(" ");
-  }
-  Serial.print(" UFID : ");
-  Serial.println(content);
+  printHexUID(mfrc522.uid.uidByte);
   
-  if(checkAuth(content)){
-    digitalWrite(led, HIGH);
-    Serial.print("Sending packet <card number> to server: ");
+  digitalWrite(led, HIGH);
+  Serial.println("Sending packet <card number> to server.");
   
-    //LoRa.send packet
-    LoRa.beginPacket();
-    
-    LoRa.println("src : 01");
-    LoRa.println("dest : 43");
-    LoRa.println("obj : UID");
-    LoRa.print("msg : ");
-    LoRa.println(content);
-    
-    LoRa.endPacket();
-    delay(40);
-    digitalWrite(led, LOW); 
-  }
+  //LoRa.send packet
+  LoRa.beginPacket();
+  int i = 0;
+  
+  LoRa.write(01); //src
+  LoRa.write(43); //dest
+  LoRa.write(01); //code fonction
+  //LoRa.write(mfrc522.uid.uidByte); //UID
+  while (mfrc522.uid.uidByte[i] != 0) LoRa.write((uint8_t)mfrc522.uid.uidByte[i++]);
+  
+  LoRa.endPacket();
+  delay(40);
+  digitalWrite(led, LOW); 
 
 }
