@@ -13,12 +13,15 @@
 #define SS_PIN          7 //10
 
 #define MIN_TIMEOUT_MS   3000
-
+#define MAX_NB_BLACKLISTED_IDS  10
+#define MAX_NB_CHARS_ID 12
 
 #include <SPI.h>
 #include <MFRC522.h>
 #include <LoRa.h>
 #include <MKRWAN.h>
+#include <ctype.h>
+#include <string.h>
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
@@ -28,7 +31,12 @@ LoRaModem modem;
 
 unsigned long enableRFIDAfter = 0;
 
-void initRFID(){
+// Array containing all the blacklisted ids
+char blacklist[MAX_NB_BLACKLISTED_IDS][MAX_NB_CHARS_ID] = {
+  "22 d6 ba 1e"
+};
+
+void initRFID() {
   Serial.begin(115200);   // Initialize serial communications with the PC
   while (!Serial);    // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
   SPI.begin();      // Init SPI bus
@@ -37,12 +45,12 @@ void initRFID(){
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
 }
 
-void launchLoRa(){
+void launchLoRa() {
   Serial.begin(9600);
   while (!Serial);  // On attend que le port série (série sur USBnatif) soit dispo
 
   modem.dumb();     // On passe le modem en mode transparent
-  
+
   pinMode(led, OUTPUT);
   LoRa.setPins(LORA_IRQ_DUMB, 6, 1); // set CS, reset, IRQ pin
   LoRa.setTxPower(17, PA_OUTPUT_RFO_PIN);
@@ -76,12 +84,35 @@ String printHexUID(byte* uid){
   Serial.println(content);
 }
 
+/**
+ * Change the given string into a lower case string
+ */
+void toLowerCase(char* str, int size) {
+  for (int i = 0; i < size; i++) {
+    str[i] = tolower(str[i]);
+  }
+}
+
+/**
+ * Check if the given ID is valid (a.k.a. not in the blacklist)
+ * Note that the given ID will be converted into a lowercase char array.
+ */
+bool isValidID(char* id) {
+  for (int i = 0; i < MAX_NB_BLACKLISTED_IDS; i++) {
+    toLowerCase(id, MAX_NB_CHARS_ID);
+    if (strcmp(id, blacklist[i]) == 0)
+      return false;
+  }
+  
+  return true;
+}
+
 /*
   SETUP
 */
 
 void setup() {
-  initRFID(); 
+  initRFID();
   launchLoRa();
 }
 
@@ -127,5 +158,37 @@ void loop() {
   LoRa.endPacket();
   delay(40);
   digitalWrite(led, LOW); 
+
+  currentTime = millis();
+  enableRFIDAfter = currentTime + MIN_TIMEOUT_MS;
+
+  unsigned int readingCard = 0;
+  String content = "";
+  //Print card UID
+  Serial.println("New card presented.");
+  byte letter;
+  for (byte i = 0; i < mfrc522.uid.size; i++)
+  {
+    content.concat(String(mfrc522.uid.uidByte[i], HEX));
+    if (i != mfrc522.uid.size - 1 ) content.concat(" ");
+  }
+  Serial.print(" UFID : ");
+  Serial.println(content);
+
+  digitalWrite(led, HIGH);
+  Serial.print("Sending packet <card number> to server: ");
+
+  //LoRa.send packet
+  LoRa.beginPacket();
+
+  LoRa.println("src : 01");
+  LoRa.println("dest : 43");
+  LoRa.println("obj : UID");
+  LoRa.print("msg : ");
+  LoRa.println(content);
+
+  LoRa.endPacket();
+  delay(40);
+  digitalWrite(led, LOW);
 
 }
