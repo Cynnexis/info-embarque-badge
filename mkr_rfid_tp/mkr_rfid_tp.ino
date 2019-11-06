@@ -27,7 +27,6 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 byte STATION_ID = 1;
 const long freq = 868E6;
 const int led = 6;
-const int beep = 6;
 LoRaModem modem;
 
 
@@ -76,6 +75,21 @@ void launchLoRa(){
   Serial.println(freq);
 }
 
+void ledLoopError() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+  delay(15);
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
+
+void ledLoopSuccess() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
 void checkResultCode(byte byteErr){
   switch (byteErr)
   {
@@ -96,17 +110,11 @@ boolean checkWhiteListCode(byte byteErr){
   {
     case 0:
       //TODO remove from whitelist
-      digitalWrite(beep, HIGH);
-      delay(1000);
-      digitalWrite(beep, LOW);
       Serial.println("> UID Unauthorized by server.");
       return false;
       break;
     case 1:
       //TODO add to white list
-      digitalWrite(beep, HIGH);
-      delay(1000);
-      digitalWrite(beep, LOW);
       Serial.println("> UID Authorized.");
       return true;
       break;
@@ -213,7 +221,7 @@ void printUID(byte* uid){
   content.concat(String("]"));
   
   Serial.print("> Body (byte) : ");
-  Serial.print(content);
+  Serial.println(content);
 }
 
 /**
@@ -248,7 +256,6 @@ void loraSendRequest(byte* uid, byte src, byte dest, byte codeF) {
   LoRa.write(codeF); //code fonction test validité
   while (j < 4) LoRa.write((uint8_t)uid[j++]);
   LoRa.endPacket();
-  delay(40);
   digitalWrite(led, LOW); 
   Serial.println("> Waiting for server response");
 }
@@ -263,7 +270,6 @@ void setup() {
   addToWhitelist(badge);
   initRFID(); 
   launchLoRa();
-  pinMode(beep, OUTPUT);
 }
 
 /*
@@ -285,7 +291,7 @@ void loop() {
       byte dataByte = LoRa.read();
       received[dataIterator++] = dataByte;
     }
-    
+
     //process packet
     if(received[1] == STATION_ID){ //if message is for us
       Serial.println();
@@ -296,14 +302,17 @@ void loop() {
       if(received[0] != 43){
         Serial.println("> This is not a message from server.");
       }else if(received[2] == 0){
-        Serial.println("> Checking door opening.");
-        checkResultCode(received[3]);
+        Serial.print("> Number of card auth by server : ");
+        Serial.println(received[3]);
+        Serial.println("Check auth update");
+        loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
       }else if(received[2] == 1){
-        Serial.println("> Checking auth response.");
         boolean whitelisted = checkWhiteListCode(received[3]);
-        if(whitelisted && currentUID != NULL){
-          Serial.println("> Asking to open the door.");
-          loraSendRequest(currentUID, STATION_ID , 43, 00);
+        if(whitelisted){
+          Serial.println("Door opened.");
+          ledLoopSuccess();
+        }else{
+          ledLoopError();
         }
       }
     }
@@ -340,12 +349,14 @@ void loop() {
   printUID(mfrc522.uid.uidByte);
   
   if (!isValidID(mfrc522.uid.uidByte)) {
-    Serial.println("> Blacklisted ID locally !\n\t Unauthorized access!");
+    Serial.println("> Blacklisted ID locally !\n> Unauthorized access!");
     Serial.println("\t> Asking auth. to server.");
     loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
   }else{
     Serial.println("> WhiteListed ID locally ! Authorized access");
-    Serial.println("> Asking to open the door.");
+    Serial.println("> Door opened");
+    ledLoopSuccess();
+    Serial.println("> Asking number of cards auth for this station");
     loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 00);
   }
   
