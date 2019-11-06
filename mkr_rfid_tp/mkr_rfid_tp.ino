@@ -199,8 +199,7 @@ void loop() {
       byte dataByte = LoRa.read();
       received[dataIterator++] = dataByte;
     }
-    printUID(received);
-    
+
     //process packet
     if(received[1] == STATION_ID){ //if message is for us
       Serial.println();
@@ -211,18 +210,14 @@ void loop() {
       if(received[0] != 43){
         Serial.println("> This is not a message from server.");
       }else if(received[2] == 0){
-        Serial.println("> Number of card authorized by server");
-        Serial.println(" > Station ID : ");
-        Serial.print(STATION_ID);
-        Serial.println("> Number of cards and badge : ");
+        Serial.print("> Number of card auth by server : ");
         Serial.println(received[3]);
         Serial.println("Check auth update");
         loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
       }else if(received[2] == 1){
         boolean whitelisted = checkWhiteListCode(received[3]);
-        if(whitelisted && currentUID != NULL){
-          Serial.println("Asking number of cards auth for this station");
-          loraSendRequest(currentUID, STATION_ID , 43, 00);
+        if(whitelisted){
+          Serial.println("Door opened.");
         }
       }
     }
