@@ -35,10 +35,10 @@ unsigned long enableRFIDAfter = 0;
 byte* currentUID = NULL;
 
 // Array containing all the whitelisted ids
-byte whitelist[MAX_NB_WHITELISTED_IDS][BYTE_ID_SIZE] = {
-  // {34, 214, 186, 30},
-  {70, 235, 167, 172}
-};
+byte whitelist[MAX_NB_WHITELISTED_IDS][BYTE_ID_SIZE];
+
+// Stop value for whitelist
+byte STOP_VALUE[BYTE_ID_SIZE] = {-1, -1, -1, -1};
 
 void initRFID() {
   Serial.begin(115200);   // Initialize serial communications with the PC
@@ -117,6 +117,80 @@ boolean checkWhiteListCode(byte byteErr){
   }
 }
 
+/**
+ * Check if the two arrays are equal.
+ */
+boolean areArraysEqual(void* array1, size_t length1, void* array2, size_t length2) {
+  return length1 == length2 && !memcmp(array1, array2, length1);
+}
+
+/**
+ * Return the length of the given array, by searching for the stop value. If no stop value detected, return `MAX_NB_WHITELISTED_IDS`.
+ */
+int len(byte array1[BYTE_ID_SIZE]) {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    if (areArraysEqual((void*) array1[i], BYTE_ID_SIZE, (void*) STOP_VALUE, BYTE_ID_SIZE))
+      return i;
+  }
+  return MAX_NB_WHITELISTED_IDS;
+}
+
+/**
+ * Setup the whitelist by putting STOP_VALUE everywhere
+ */
+void setupWhitelist() {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    memcpy(whitelist[i], STOP_VALUE, BYTE_ID_SIZE);
+  }
+}
+
+/**
+ * Add an ID to the whitelist.
+ */
+boolean addToWhitelist(byte uid[BYTE_ID_SIZE]) {
+  // Search for an empty slot
+  int i = 0;
+  while (i < MAX_NB_WHITELISTED_IDS && whitelist[i] != NULL) {
+    i++;
+  }
+  
+  // Now, either whitelist[i] == NULL (empty slot), or the whole array has been parsed. If so, return false
+  if (i == MAX_NB_WHITELISTED_IDS)
+    return false;
+  
+  // Put the uid at the empty slot
+  memcpy(whitelist[i], uid, BYTE_ID_SIZE);
+  return true;
+}
+
+/**
+ * Remove an ID from the whitelist.
+ */
+boolean removeFromWhitelist(byte uid[BYTE_ID_SIZE]) {
+  // Search for the uid in the array
+  int i;
+  boolean found = false;
+  for (i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    // Are the two uid equal?
+    found = areArraysEqual(whitelist[i], BYTE_ID_SIZE, uid, BYTE_ID_SIZE);
+    
+    // If found, exit the loop
+    if (found)
+      break;
+  }
+    
+  // If not found, return false
+  if (!found)
+    return false;
+  
+  // The index `i` is where uid is in the array. Remove it from the array by shift the other elements
+  for (; i < MAX_NB_WHITELISTED_IDS-1; i++)
+    memcpy(whitelist[i], whitelist[i + 1], BYTE_ID_SIZE);
+  
+  memcpy(whitelist[MAX_NB_WHITELISTED_IDS-1], STOP_VALUE, BYTE_ID_SIZE);
+  return true;
+}
+
 void printHexUID(byte* uid){
   String content= "";
   for (byte i = 0; i < 4; i++) 
@@ -184,6 +258,9 @@ void loraSendRequest(byte* uid, byte src, byte dest, byte codeF) {
 */
 
 void setup() {
+  setupWhitelist();
+  byte badge[] = {70, 235, 167, 172};
+  addToWhitelist(badge);
   initRFID(); 
   launchLoRa();
   pinMode(beep, OUTPUT);
