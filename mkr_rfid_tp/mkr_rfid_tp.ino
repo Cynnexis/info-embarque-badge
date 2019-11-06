@@ -75,6 +75,21 @@ void launchLoRa(){
   Serial.println(freq);
 }
 
+void ledLoopError() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+  delay(15);
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
+
+void ledLoopSuccess() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
 void checkResultCode(byte byteErr){
   switch (byteErr)
   {
@@ -218,6 +233,9 @@ void loop() {
         boolean whitelisted = checkWhiteListCode(received[3]);
         if(whitelisted){
           Serial.println("Door opened.");
+          ledLoopSuccess();
+        }else{
+          ledLoopError();
         }
       }
     }
@@ -260,6 +278,7 @@ void loop() {
   }else{
     Serial.println("> WhiteListed ID locally ! Authorized access");
     Serial.println("> Door opened");
+    ledLoopSuccess();
     Serial.println("> Asking number of cards auth for this station");
     loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 00);
   }
