@@ -13,28 +13,31 @@
 #define SS_PIN          7 //10
 
 #define MIN_TIMEOUT_MS   3000
-#define MAX_NB_BLACKLISTED_IDS  10
-#define MAX_NB_CHARS_ID 12
+#define MAX_NB_WHITELISTED_IDS  10
+#define BYTE_ID_SIZE 4
+#define RECEIVED_BYTE_SIZE   50
 
 #include <SPI.h>
 #include <MFRC522.h>
 #include <LoRa.h>
 #include <MKRWAN.h>
-#include <ctype.h>
-#include <string.h>
 
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
+byte STATION_ID = 1;
 const long freq = 868E6;
 const int led = 6;
 LoRaModem modem;
 
-unsigned long enableRFIDAfter = 0;
 
-// Array containing all the blacklisted ids
-char blacklist[MAX_NB_BLACKLISTED_IDS][MAX_NB_CHARS_ID] = {
-  "22 d6 ba 1e"
-};
+unsigned long enableRFIDAfter = 0;
+byte* currentUID = NULL;
+
+// Array containing all the whitelisted ids
+byte whitelist[MAX_NB_WHITELISTED_IDS][BYTE_ID_SIZE];
+
+// Stop value for whitelist
+byte STOP_VALUE[BYTE_ID_SIZE] = {-1, -1, -1, -1};
 
 void initRFID() {
   Serial.begin(115200);   // Initialize serial communications with the PC
@@ -45,12 +48,12 @@ void initRFID() {
   Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
 }
 
-void launchLoRa() {
+void launchLoRa(){
   Serial.begin(9600);
   while (!Serial);  // On attend que le port série (série sur USBnatif) soit dispo
 
   modem.dumb();     // On passe le modem en mode transparent
-
+  
   pinMode(led, OUTPUT);
   LoRa.setPins(LORA_IRQ_DUMB, 6, 1); // set CS, reset, IRQ pin
   LoRa.setTxPower(17, PA_OUTPUT_RFO_PIN);
@@ -72,39 +75,189 @@ void launchLoRa() {
   Serial.println(freq);
 }
 
-String printHexUID(byte* uid){
+void ledLoopError() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+  delay(15);
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
+
+void ledLoopSuccess() {
+  digitalWrite(led, HIGH);
+  delay(15);
+  digitalWrite(led, LOW);
+}
+void checkResultCode(byte byteErr){
+  switch (byteErr)
+  {
+     case 0:
+     Serial.println("Couldn't save uid in database.");
+     break;
+     case 1:
+     Serial.println("Success while saving uid in server base");
+     break;
+     default:
+     Serial.println("Error: Unrecognized server code encountered.");
+     break;
+  }
+}
+
+boolean checkWhiteListCode(byte byteErr){
+  switch (byteErr)
+  {
+    case 0:
+      //TODO remove from whitelist
+      Serial.println("> UID Unauthorized by server.");
+      return false;
+      break;
+    case 1:
+      //TODO add to white list
+      Serial.println("> UID Authorized.");
+      return true;
+      break;
+    default:
+      Serial.println("> Error: Unrecognized server code encountered.");
+      return false;
+      break;
+  }
+}
+
+/**
+ * Check if the two arrays are equal.
+ */
+boolean areArraysEqual(void* array1, size_t length1, void* array2, size_t length2) {
+  return length1 == length2 && !memcmp(array1, array2, length1);
+}
+
+/**
+ * Return the length of the given array, by searching for the stop value. If no stop value detected, return `MAX_NB_WHITELISTED_IDS`.
+ */
+int len(byte array1[BYTE_ID_SIZE]) {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    if (areArraysEqual((void*) array1[i], BYTE_ID_SIZE, (void*) STOP_VALUE, BYTE_ID_SIZE))
+      return i;
+  }
+  return MAX_NB_WHITELISTED_IDS;
+}
+
+/**
+ * Setup the whitelist by putting STOP_VALUE everywhere
+ */
+void setupWhitelist() {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    memcpy(whitelist[i], STOP_VALUE, BYTE_ID_SIZE);
+  }
+}
+
+/**
+ * Add an ID to the whitelist.
+ */
+boolean addToWhitelist(byte uid[BYTE_ID_SIZE]) {
+  // Search for an empty slot
+  int i = 0;
+  while (i < MAX_NB_WHITELISTED_IDS && whitelist[i] != NULL) {
+    i++;
+  }
+  
+  // Now, either whitelist[i] == NULL (empty slot), or the whole array has been parsed. If so, return false
+  if (i == MAX_NB_WHITELISTED_IDS)
+    return false;
+  
+  // Put the uid at the empty slot
+  memcpy(whitelist[i], uid, BYTE_ID_SIZE);
+  return true;
+}
+
+/**
+ * Remove an ID from the whitelist.
+ */
+boolean removeFromWhitelist(byte uid[BYTE_ID_SIZE]) {
+  // Search for the uid in the array
+  int i;
+  boolean found = false;
+  for (i = 0; i < MAX_NB_WHITELISTED_IDS; i++) {
+    // Are the two uid equal?
+    found = areArraysEqual(whitelist[i], BYTE_ID_SIZE, uid, BYTE_ID_SIZE);
+    
+    // If found, exit the loop
+    if (found)
+      break;
+  }
+    
+  // If not found, return false
+  if (!found)
+    return false;
+  
+  // The index `i` is where uid is in the array. Remove it from the array by shift the other elements
+  for (; i < MAX_NB_WHITELISTED_IDS-1; i++)
+    memcpy(whitelist[i], whitelist[i + 1], BYTE_ID_SIZE);
+  
+  memcpy(whitelist[MAX_NB_WHITELISTED_IDS-1], STOP_VALUE, BYTE_ID_SIZE);
+  return true;
+}
+
+void printHexUID(byte* uid){
   String content= "";
   for (byte i = 0; i < 4; i++) 
   {
     content.concat(String(uid[i], HEX));
     if(i != 3 ) content.concat(" ");
   }
-  Serial.println("New card presented.");
-  Serial.print(" UFID : ");
+  Serial.print("> Body (hex) : ");
+  Serial.println(content);
+}
+
+void printUID(byte* uid){
+  String content= "[";
+  for (byte i = 0; i < BYTE_ID_SIZE; i++) {
+    content.concat(String(uid[i]));
+    if (i != (BYTE_ID_SIZE-1))
+      content.concat(String(", "));
+  }
+  
+  content.concat(String("]"));
+  
+  Serial.print("> Body (byte) : ");
   Serial.println(content);
 }
 
 /**
  * Change the given string into a lower case string
  */
-void toLowerCase(char* str, int size) {
-  for (int i = 0; i < size; i++) {
-    str[i] = tolower(str[i]);
-  }
+int byteArrayCmp(byte* b1, byte* b2, int size) {
+  int hash = 0;
+  for (int i = 0; i < size; i++)
+    hash += b1[i] - b2[i];
+  return hash;
 }
 
 /**
- * Check if the given ID is valid (a.k.a. not in the blacklist)
+ * Check if the given ID is valid (a.k.a. in the whitelist)
  * Note that the given ID will be converted into a lowercase char array.
  */
-bool isValidID(char* id) {
-  for (int i = 0; i < MAX_NB_BLACKLISTED_IDS; i++) {
-    toLowerCase(id, MAX_NB_CHARS_ID);
-    if (strcmp(id, blacklist[i]) == 0)
-      return false;
-  }
+bool isValidID(byte* id) {
+  for (int i = 0; i < MAX_NB_WHITELISTED_IDS; i++)
+    if (byteArrayCmp(id, whitelist[i], BYTE_ID_SIZE) == 0)
+      return true;
   
-  return true;
+  return false;
+}
+
+void loraSendRequest(byte* uid, byte src, byte dest, byte codeF) {
+  Serial.println("> Sending packet to server.");
+  digitalWrite(led, HIGH);
+  LoRa.beginPacket();
+  int j = 0;
+  LoRa.write(src); //src
+  LoRa.write(dest); //dest
+  LoRa.write(codeF); //code fonction test validité
+  while (j < 4) LoRa.write((uint8_t)uid[j++]);
+  LoRa.endPacket();
+  digitalWrite(led, LOW); 
+  Serial.println("> Waiting for server response");
 }
 
 /*
@@ -112,7 +265,10 @@ bool isValidID(char* id) {
 */
 
 void setup() {
-  initRFID();
+  setupWhitelist();
+  byte badge[] = {70, 235, 167, 172};
+  addToWhitelist(badge);
+  initRFID(); 
   launchLoRa();
 }
 
@@ -121,42 +277,89 @@ void setup() {
 */
 
 void loop() {
-  // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
+  
+  //-------------------------------
+  //PASSIVE LISTEN FOR MESSAGES
+  //-------------------------------
+
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    // read packet
+    byte received[RECEIVED_BYTE_SIZE];
+    int dataIterator = 0;
+    while (LoRa.available()) {
+      byte dataByte = LoRa.read();
+      received[dataIterator++] = dataByte;
+    }
+
+    //process packet
+    if(received[1] == STATION_ID){ //if message is for us
+      Serial.println();
+      Serial.println("> Received packet");
+      printUID(received);
+      Serial.println();
+      
+      if(received[0] != 43){
+        Serial.println("> This is not a message from server.");
+      }else if(received[2] == 0){
+        Serial.print("> Number of card auth by server : ");
+        Serial.println(received[3]);
+        Serial.println("Check auth update");
+        loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
+      }else if(received[2] == 1){
+        boolean whitelisted = checkWhiteListCode(received[3]);
+        if(whitelisted){
+          Serial.println("Door opened.");
+          ledLoopSuccess();
+        }else{
+          ledLoopError();
+        }
+      }
+    }
+  }
+  
+  //-------------------------------
+  //PASSIVE LISTEN FOR NEW CARDS
+  //-------------------------------
+  
+  // Reset the loop if no new card present on the sensor/reader.
   if ( ! mfrc522.PICC_IsNewCardPresent()) {
     return;
   }
   
   unsigned long currentTime = millis();
   
+  //Reset the loop if a card has already been read
   if (currentTime < enableRFIDAfter)
     return;
   
-  // Select one of the cards
-  if ( ! mfrc522.PICC_ReadCardSerial()) {
+  // Select one of the cards. Reset the loop if no cards
+  if (!mfrc522.PICC_ReadCardSerial()) {
     return;
   }
   
+  //Update delay
   currentTime = millis();
   enableRFIDAfter = currentTime + MIN_TIMEOUT_MS;
   
-  //Print card UID
+  //Print new card UID
+  Serial.println();
+  Serial.println("> New card presented.");
   printHexUID(mfrc522.uid.uidByte);
+  printUID(mfrc522.uid.uidByte);
   
-  digitalWrite(led, HIGH);
-  Serial.println("Sending packet <card number> to server.");
+  if (!isValidID(mfrc522.uid.uidByte)) {
+    Serial.println("> Blacklisted ID locally !\n> Unauthorized access!");
+    Serial.println("\t> Asking auth. to server.");
+    loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
+  }else{
+    Serial.println("> WhiteListed ID locally ! Authorized access");
+    Serial.println("> Door opened");
+    ledLoopSuccess();
+    Serial.println("> Asking number of cards auth for this station");
+    loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 00);
+  }
   
-  //LoRa.send packet
-  LoRa.beginPacket();
-  int i = 0;
-  
-  LoRa.write(01); //src
-  LoRa.write(43); //dest
-  LoRa.write(01); //code fonction
-  //LoRa.write(mfrc522.uid.uidByte); //UID
-  while (mfrc522.uid.uidByte[i] != 0) LoRa.write((uint8_t)mfrc522.uid.uidByte[i++]);
-  
-  LoRa.endPacket();
-  delay(40);
-  digitalWrite(led, LOW); 
+  currentUID = mfrc522.uid.uidByte;
 
 }
