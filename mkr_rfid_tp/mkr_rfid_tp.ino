@@ -111,11 +111,13 @@ boolean checkWhiteListCode(byte byteErr){
     case 0:
       //TODO remove from whitelist
       Serial.println("> UID Unauthorized by server.");
+      Serial.println("> Changing local whitelist.");
       return false;
       break;
     case 1:
       //TODO add to white list
       Serial.println("> UID Authorized.");
+      Serial.println("> Changing local whitelist.");
       return true;
       break;
     default:
@@ -186,6 +188,7 @@ void loraSendRequest(byte* uid, byte src, byte dest, byte codeF) {
   Serial.println("> Waiting for server response");
 }
 
+
 /*
   SETUP
 */
@@ -228,14 +231,12 @@ void loop() {
         Serial.print("> Number of card auth by server : ");
         Serial.println(received[3]);
         Serial.println("Check auth update");
+        Serial.println();
         loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 01);
       }else if(received[2] == 1){
         boolean whitelisted = checkWhiteListCode(received[3]);
         if(whitelisted){
           Serial.println("Door opened.");
-          ledLoopSuccess();
-        }else{
-          ledLoopError();
         }
       }
     }
@@ -278,7 +279,6 @@ void loop() {
   }else{
     Serial.println("> WhiteListed ID locally ! Authorized access");
     Serial.println("> Door opened");
-    ledLoopSuccess();
     Serial.println("> Asking number of cards auth for this station");
     loraSendRequest(mfrc522.uid.uidByte, STATION_ID, 43, 00);
   }
